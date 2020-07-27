@@ -3,12 +3,16 @@ package com.zhuhy.esapi;
 import com.alibaba.fastjson.JSON;
 import com.zhuhy.esapi.pojo.User;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.action.update.UpdateResponse;
@@ -19,12 +23,18 @@ import org.elasticsearch.client.indices.CreateIndexResponse;
 import org.elasticsearch.client.indices.GetIndexRequest;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.TermQueryBuilder;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 @SpringBootTest
 class EsApiApplicationTests {
@@ -135,6 +145,64 @@ class EsApiApplicationTests {
         DeleteResponse deleteResponse = client.delete(request,
                 RequestOptions.DEFAULT);
         System.out.println(deleteResponse.status());
+    }
+
+    /**
+     * 特殊的，真的项目一般都会批量插入数据！
+     */
+    @Test
+    void testBulkRequest() throws IOException {
+        BulkRequest bulkRequest = new BulkRequest();
+        bulkRequest.timeout("10s");
+        ArrayList<User> userList = new ArrayList<>();
+        userList.add(new User("user01", 3));
+        userList.add(new User("user02", 3));
+        userList.add(new User("user03", 3));
+        userList.add(new User("user04", 3));
+        userList.add(new User("user05", 3));
+        userList.add(new User("user06", 3));
+        // 批处理请求
+        for (int i = 0; i < userList.size(); i++) {
+            // 批量更新和批量删除，就在这里修改对应的请求就可以了
+            bulkRequest.add(
+                    new IndexRequest("demo_index")
+                            .id("" + (i + 1))
+                            .source(JSON.toJSONString(userList.get(i)), XContentType.JSON));
+        }
+        BulkResponse bulkResponse = client.bulk(bulkRequest,
+                RequestOptions.DEFAULT);
+        System.out.println(bulkResponse.hasFailures()); // 是否失败，返回 false 代表成功！
+    }
+
+    // 查询
+    // SearchRequest 搜索请求
+    // SearchSourceBuilder 条件构造
+    // HighlightBuilder 构建高亮
+    // TermQueryBuilder 精确查询
+    // MatchAllQueryBuilder
+    // xxx QueryBuilder 对应我们刚才看到的命令！
+    @Test
+    void testSearch() throws IOException {
+        SearchRequest searchRequest = new SearchRequest("demo_index");
+        // 构建搜索条件
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+//        sourceBuilder.highlighter();
+        // 查询条件，我们可以使用 QueryBuilders 工具来实现
+        // QueryBuilders.termQuery 精确
+        // QueryBuilders.matchAllQuery() 匹配所有
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("name", "user01");
+        // MatchAllQueryBuilder matchAllQueryBuilder =
+//        QueryBuilders.matchAllQuery();
+        sourceBuilder.query(termQueryBuilder);
+        sourceBuilder.timeout(new TimeValue(60, TimeUnit.SECONDS));
+        searchRequest.source(sourceBuilder);
+        SearchResponse searchResponse = client.search(searchRequest,
+                RequestOptions.DEFAULT);
+        System.out.println(JSON.toJSONString(searchResponse.getHits()));
+        System.out.println("===============================================");
+        for (SearchHit documentFields : searchResponse.getHits().getHits()) {
+            System.out.println(documentFields.getSourceAsMap());
+        }
     }
 
 }
